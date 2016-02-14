@@ -122,65 +122,47 @@ handle_request = (req, res) ->
     active_request_handlers -= 1
 
   active_request_handlers += 1
-  cache_namespace = "global-"
 
-  if req.query.cache_namespace?
-    cache_namespace = req.query.cache_namespace
+  do_with_random_worker thread_number, (worker) ->
 
-  cache_key = "#{cache_namespace}#{req.query.fetch_url}"
+    # Make the URL for the worker
+    worker_request_url = url.format {
+      protocol: "http"
+      hostname: "localhost"
+      port: worker.port
+      query: req.query
+    }
 
-  # Where the magic happens.
-  memcached.get cache_key, (error, data) ->
+    options = {url: worker_request_url, headers: {'real-ip': req.headers['real-ip']}, timeout: config.global_timeout}
 
-    # Check if we can and should fetch, or serve from cache
-    if error? or not data? or req.query.force in ["true", "1"]
-      do_with_random_worker thread_number, (worker) ->
+    # Make the request to the worker and store in cache if status is 200 (don't store bad requests)
+    request options, (error, response, body) ->
+      try
+        # Return to requester!
+        respond(response.statusCode, body)
+      catch err
+        res.statusCode = 500
+        close_response("phear-#{thread_number}", "Request failed due to an internal server error.", res)
 
-        # Make the URL for the worker
-        worker_request_url = url.format {
-          protocol: "http"
-          hostname: "localhost"
-          port: worker.port
-          query: req.query
-        }
+        if worker.process.status not in ["stopping", "stopped"]
+          logger.info "phear-#{thread_number}", "Trying to restart worker with PID #{worker.process.pid}..."
+          worker.process.stop(->
+            if worker.process.status == "stopped"
+              worker.process.start()
+              logger.info "phear-#{thread_number}", "Restarted worker with PID #{worker.process.pid}."
+          )
+        else
+          logger.info "phear-#{thread_number}", "Worker with PID #{worker.process.pid} is being restarted..."
 
-        options = {url: worker_request_url, headers: {'real-ip': req.headers['real-ip']}, timeout: config.global_timeout}
+        active_request_handlers -= 1
 
-        # Make the request to the worker and store in cache if status is 200 (don't store bad requests)
-        request options, (error, response, body) ->
-          try
-            if response.statusCode == 200
-              memcached.set cache_key, body, config.cache_ttl, ->
-                logger.info "phear-#{thread_number}", "Stored #{req.query.fetch_url} in cache"
-
-            # Return to requester!
-            respond(response.statusCode, body)
-          catch err
-            res.statusCode = 500
-            close_response("phear-#{thread_number}", "Request failed due to an internal server error.", res)
-
-            if worker.process.status not in ["stopping", "stopped"]
-              logger.info "phear-#{thread_number}", "Trying to restart worker with PID #{worker.process.pid}..."
-              worker.process.stop(->
-                if worker.process.status == "stopped"
-                  worker.process.start()
-                  logger.info "phear-#{thread_number}", "Restarted worker with PID #{worker.process.pid}."
-              )
-            else
-              logger.info "phear-#{thread_number}", "Worker with PID #{worker.process.pid} is being restarted..."
-
-            active_request_handlers -= 1
-
-    else
-      logger.info "phear-#{thread_number}", "Serving entry from cache."
-      respond(200, data)
 
 # Fetch a random running worker
 do_with_random_worker = (thread_number, callback) ->
   running_workers = get_running_workers()
 
   if running_workers.length > 0
-    callback running_workers[Math.floor(Math.random()*running_workers.length)]
+    callback running_workers[Math.floor(Math.random() * running_workers.length)]
   else
     logger.info "phear-#{thread_number}", "No running workers, waiting for a new worker to come up."
     setTimeout (-> do_with_random_worker(thread_number, callback)), 500
@@ -189,7 +171,7 @@ get_running_workers = ->
   (worker for worker in workers when worker.process.status is "running")
 
 # Prettily close a response
-close_response = (inst, status, response, refused=false) ->
+close_response = (inst, status, response, refused = false) ->
   response.set "content-type", "application/json"
 
   logger.info inst, "Ending process."
@@ -227,7 +209,6 @@ stop = ->
 # 3rd-party libs
 basic_auth = require('basic-auth')
 express = require('express')
-Memcached = require('memcached')
 package_definition = require('./package.json')
 request = require('request')
 respawn = require('respawn')
@@ -235,13 +216,13 @@ tree_kill = require('tree-kill');
 url = require('url')
 
 argv = require('yargs')
-    .usage('Parse dynamic webpages.\nUsage: $0')
-    .example('$0 -c', 'location of phear configuration file')
-    .alias('c', 'config')
-    .example('$0 -e', 'environment to run in.')
-    .alias('e', 'environment')
-    .default({c: "./config/config.json", e: "development"})
-    .argv
+.usage('Parse dynamic webpages.\nUsage: $0')
+.example('$0 -c', 'location of phear configuration file')
+.alias('c', 'config')
+.example('$0 -e', 'environment to run in.')
+.alias('e', 'environment')
+.default({c: "./config/config.json", e: "development"})
+.argv
 
 # My libs
 Logger = require("./lib/logger.js")
@@ -258,18 +239,6 @@ config.worker.environment = mode
 # Instantiate stuff
 logger = new Logger(config, config.base_port)
 workers = new Array(config.workers)
-
-memcached_options = config.memcached.options
-memcached_options.poolSize = config.workers * 10
-memcached = new Memcached(config.memcached.servers, memcached_options)
-
-# Make sure workers die on memcached errors.
-memcached.on 'issue', (f) ->
-  logger.info "phear", "Memcache failed: #{f.messages}"
-  stop()
-
-# Just check that Memcache is running by looking at stats, before promising you nice stuff.
-memcached.stats((_)->true)
 
 # Make sure that when the process is stopped due to an exception
 # the PhantomJS processes also stop.

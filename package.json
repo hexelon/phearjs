@@ -26,7 +26,6 @@
     "dot-object": "latest",
     "express": "latest",
     "jade": "latest",
-    "memcached": "latest",
     "querystring": "latest",
     "request": "latest",
     "respawn": "latest",

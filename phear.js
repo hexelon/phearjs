@@ -1,6 +1,6 @@
 #! /usr/bin/env node
 (function() {
-  var Config, Logger, Memcached, Stats, active_request_handlers, argv, basic_auth, close_response, config, do_with_random_worker, express, get_running_workers, handle_request, ip_allowed, logger, memcached, memcached_options, mode, mommy, next_thread_number, package_definition, request, respawn, serve, spawn, stats, stop, tree_kill, url, workers,
+  var Config, Logger, Stats, active_request_handlers, argv, basic_auth, close_response, config, do_with_random_worker, express, get_running_workers, handle_request, ip_allowed, logger, mode, mommy, next_thread_number, package_definition, request, respawn, serve, spawn, stats, stop, tree_kill, url, workers,
     indexOf = [].indexOf || function(item) { for (var i = 0, l = this.length; i < l; i++) { if (i in this && this[i] === item) return i; } return -1; };
 
   spawn = function(n) {
@@ -76,7 +76,7 @@
   };
 
   handle_request = function(req, res) {
-    var cache_key, cache_namespace, error1, respond, thread_number;
+    var error1, respond, thread_number;
     thread_number = next_thread_number();
     res.header("Access-Control-Allow-Origin", "*");
     res.header("Access-Control-Allow-Headers", "Origin, X-Requested-With, Content-Type, Accept");
@@ -110,61 +110,43 @@
       return active_request_handlers -= 1;
     };
     active_request_handlers += 1;
-    cache_namespace = "global-";
-    if (req.query.cache_namespace != null) {
-      cache_namespace = req.query.cache_namespace;
-    }
-    cache_key = "" + cache_namespace + req.query.fetch_url;
-    return memcached.get(cache_key, function(error, data) {
-      var ref;
-      if ((error != null) || (data == null) || ((ref = req.query.force) === "true" || ref === "1")) {
-        return do_with_random_worker(thread_number, function(worker) {
-          var options, worker_request_url;
-          worker_request_url = url.format({
-            protocol: "http",
-            hostname: "localhost",
-            port: worker.port,
-            query: req.query
-          });
-          options = {
-            url: worker_request_url,
-            headers: {
-              'real-ip': req.headers['real-ip']
-            },
-            timeout: config.global_timeout
-          };
-          return request(options, function(error, response, body) {
-            var err, error2, ref1;
-            try {
-              if (response.statusCode === 200) {
-                memcached.set(cache_key, body, config.cache_ttl, function() {
-                  return logger.info("phear-" + thread_number, "Stored " + req.query.fetch_url + " in cache");
-                });
+    return do_with_random_worker(thread_number, function(worker) {
+      var options, worker_request_url;
+      worker_request_url = url.format({
+        protocol: "http",
+        hostname: "localhost",
+        port: worker.port,
+        query: req.query
+      });
+      options = {
+        url: worker_request_url,
+        headers: {
+          'real-ip': req.headers['real-ip']
+        },
+        timeout: config.global_timeout
+      };
+      return request(options, function(error, response, body) {
+        var err, error2, ref;
+        try {
+          return respond(response.statusCode, body);
+        } catch (error2) {
+          err = error2;
+          res.statusCode = 500;
+          close_response("phear-" + thread_number, "Request failed due to an internal server error.", res);
+          if ((ref = worker.process.status) !== "stopping" && ref !== "stopped") {
+            logger.info("phear-" + thread_number, "Trying to restart worker with PID " + worker.process.pid + "...");
+            worker.process.stop(function() {
+              if (worker.process.status === "stopped") {
+                worker.process.start();
+                return logger.info("phear-" + thread_number, "Restarted worker with PID " + worker.process.pid + ".");
               }
-              return respond(response.statusCode, body);
-            } catch (error2) {
-              err = error2;
-              res.statusCode = 500;
-              close_response("phear-" + thread_number, "Request failed due to an internal server error.", res);
-              if ((ref1 = worker.process.status) !== "stopping" && ref1 !== "stopped") {
-                logger.info("phear-" + thread_number, "Trying to restart worker with PID " + worker.process.pid + "...");
-                worker.process.stop(function() {
-                  if (worker.process.status === "stopped") {
-                    worker.process.start();
-                    return logger.info("phear-" + thread_number, "Restarted worker with PID " + worker.process.pid + ".");
-                  }
-                });
-              } else {
-                logger.info("phear-" + thread_number, "Worker with PID " + worker.process.pid + " is being restarted...");
-              }
-              return active_request_handlers -= 1;
-            }
-          });
-        });
-      } else {
-        logger.info("phear-" + thread_number, "Serving entry from cache.");
-        return respond(200, data);
-      }
+            });
+          } else {
+            logger.info("phear-" + thread_number, "Worker with PID " + worker.process.pid + " is being restarted...");
+          }
+          return active_request_handlers -= 1;
+        }
+      });
     });
   };
 
@@ -234,8 +216,6 @@
 
   express = require('express');
 
-  Memcached = require('memcached');
-
   package_definition = require('./package.json');
 
   request = require('request');
@@ -266,21 +246,6 @@
   logger = new Logger(config, config.base_port);
 
   workers = new Array(config.workers);
-
-  memcached_options = config.memcached.options;
-
-  memcached_options.poolSize = config.workers * 10;
-
-  memcached = new Memcached(config.memcached.servers, memcached_options);
-
-  memcached.on('issue', function(f) {
-    logger.info("phear", "Memcache failed: " + f.messages);
-    return stop();
-  });
-
-  memcached.stats(function(_) {
-    return true;
-  });
 
   process.on('uncaughtException', function(err) {
     logger.error("phear", "UNCAUGHT ERROR: " + err.stack);
