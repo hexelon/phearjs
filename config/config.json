@@ -9,7 +9,7 @@
         "port": 8183,
         "timeout": 10000,
         "parse_delay": 5000,
-        "user_agent": "PhearBot/0.4.1 - http://phear.io",
+        "user_agent": "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_10_2) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/41.0.2272.104 Safari/537.36",
         "max_connections": 10
       }
     },
@@ -34,7 +34,7 @@
         "port": 8183,
         "timeout": 10000,
         "parse_delay": 5000,
-        "user_agent": "PhearBot/0.4.1 - http://phear.io",
+        "user_agent": "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_10_2) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/41.0.2272.104 Safari/537.36",
         "max_connections": 10,
         "allowed_clients": ["127.0.0.1"]
       }
