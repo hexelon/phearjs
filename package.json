@@ -26,6 +26,7 @@
     "dot-object": "latest",
     "express": "latest",
     "jade": "latest",
+    "phantomjs-prebuilt": "^2.1.4",
     "querystring": "latest",
     "request": "latest",
     "respawn": "latest",

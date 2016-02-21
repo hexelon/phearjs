@@ -14,7 +14,7 @@ spawn = (n) ->
     worker_config = JSON.stringify(config.worker)
 
     # Create worker object
-    workers[i].process = respawn(["phantomjs",
+    workers[i].process = respawn([binPath,
                                   # "--load-images=no", # Due to an issue in QT a memory leak occurs with this. Re-enable when solved. Info: https://github.com/ariya/phantomjs/issues/12903.
                                   "--disk-cache=no",
                                   "--ignore-ssl-errors=yes",
@@ -214,6 +214,9 @@ request = require('request')
 respawn = require('respawn')
 tree_kill = require('tree-kill');
 url = require('url')
+phantomjs = require('phantomjs-prebuilt')
+
+binPath = phantomjs.path
 
 argv = require('yargs')
 .usage('Parse dynamic webpages.\nUsage: $0')

@@ -1,6 +1,6 @@
 #! /usr/bin/env node
 (function() {
-  var Config, Logger, Stats, active_request_handlers, argv, basic_auth, close_response, config, do_with_random_worker, express, get_running_workers, handle_request, ip_allowed, logger, mode, mommy, next_thread_number, package_definition, request, respawn, serve, spawn, stats, stop, tree_kill, url, workers,
+  var Config, Logger, Stats, active_request_handlers, argv, basic_auth, binPath, close_response, config, do_with_random_worker, express, get_running_workers, handle_request, ip_allowed, logger, mode, mommy, next_thread_number, package_definition, phantomjs, request, respawn, serve, spawn, stats, stop, tree_kill, url, workers,
     indexOf = [].indexOf || function(item) { for (var i = 0, l = this.length; i < l; i++) { if (i in this && this[i] === item) return i; } return -1; };
 
   spawn = function(n) {
@@ -13,7 +13,7 @@
         port: config.worker.port
       };
       worker_config = JSON.stringify(config.worker);
-      workers[i].process = respawn(["phantomjs", "--disk-cache=no", "--ignore-ssl-errors=yes", "--ssl-protocol=any", "lib/worker.js", "--config=" + worker_config], {
+      workers[i].process = respawn([binPath, "--disk-cache=no", "--ignore-ssl-errors=yes", "--ssl-protocol=any", "lib/worker.js", "--config=" + worker_config], {
         cwd: '.',
         sleep: 1000,
         stdio: [0, 1, 2],
@@ -225,6 +225,10 @@
   tree_kill = require('tree-kill');
 
   url = require('url');
+
+  phantomjs = require('phantomjs-prebuilt');
+
+  binPath = phantomjs.path;
 
   argv = require('yargs').usage('Parse dynamic webpages.\nUsage: $0').example('$0 -c', 'location of phear configuration file').alias('c', 'config').example('$0 -e', 'environment to run in.').alias('e', 'environment')["default"]({
     c: "./config/config.json",
